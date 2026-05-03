@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const utilisateurModel = require('../models/utilisateur.model');
+const entrepriseModel = require('../models/entreprise.model');
 const JWT_SECRET = process.env.JWT_SECRET || process.env.JWT_SECRET_KEY;
 
 const requireAuth = async (req, res, next) => {
@@ -29,6 +30,28 @@ const requireAuth = async (req, res, next) => {
         // Compatibilite descendante
         req.user = utilisateur;
         req.userId = req.utilisateurId;
+
+        // Superadmin bypasses enterprise status checks (no entrepriseId).
+        if (utilisateur.role !== 'superadmin' && utilisateur.entreprise) {
+          const entreprise = await entrepriseModel.findById(utilisateur.entreprise);
+          if (entreprise) {
+            if (entreprise.statut === 'en_attente') {
+              return res.status(403).json({
+                message: "Votre compte est en attente de validation par l'administrateur de la plateforme."
+              });
+            }
+            if (entreprise.statut === 'rejetee') {
+              return res.status(403).json({
+                message: `Votre demande d'inscription a été refusée. Motif : ${entreprise.motifRejet || 'Non précisé'}`
+              });
+            }
+            if (entreprise.statut === 'suspendue') {
+              return res.status(403).json({
+                message: "Votre compte entreprise a été suspendu. Contactez le support."
+              });
+            }
+          }
+        }
 
         next();
       }

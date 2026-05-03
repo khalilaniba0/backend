@@ -14,11 +14,30 @@ const entrepriseSchema = new mongoose.Schema(
     secteur: String,
     logo: String,
     siteWeb: String,
+    apropos: { type: String, default: "" },
     plan: { type: String, enum: ['free', 'pro', 'enterprise'], default: 'free' },
-    isActive: { type: Boolean, default: true }
+
+    // Superadmin validation workflow — replaces the old boolean isActive field.
+    statut: {
+      type: String,
+      enum: ['en_attente', 'active', 'rejetee', 'suspendue'],
+      default: 'en_attente'
+    },
+    dateInscription: { type: Date, default: Date.now },
+    dateValidation: { type: Date },
+    motifRejet: { type: String },
+    validePar: { type: mongoose.Schema.Types.ObjectId, ref: 'Utilisateur' }
   },
   { timestamps: true }
 );
+
+// Virtual backward-compat getter so legacy code reading `isActive` still works.
+entrepriseSchema.virtual('isActive').get(function () {
+  return this.statut === 'active';
+});
+
+entrepriseSchema.set('toJSON', { virtuals: true });
+entrepriseSchema.set('toObject', { virtuals: true });
 
 const Entreprise = mongoose.model('Entreprise', entrepriseSchema);
 module.exports = Entreprise;

@@ -47,7 +47,13 @@ module.exports.getAllEntretiens = async (req, res) => {
         }
 
         const entretiens = await entretienModel.find({ entreprise: req.entrepriseId })
-            .populate('candidature')
+            .populate({
+                path: 'candidature',
+                populate: {
+                    path: 'candidat',
+                    select: 'nom email telephone cv_url photo_url'
+                }
+            })
             .populate('responsable', 'nom name email');
         res.status(200).json({ message: 'Entretiens retrieved successfully', data: entretiens.map(normaliserEntretienSortie) });
     } catch (error) {
@@ -62,7 +68,13 @@ module.exports.getEntretienById = async (req, res) => {
         }
 
         const entretien = await entretienModel.findOne({ _id: req.params.id, entreprise: req.entrepriseId })
-            .populate('candidature')
+            .populate({
+                path: 'candidature',
+                populate: {
+                    path: 'candidat',
+                    select: 'nom email telephone cv_url photo_url'
+                }
+            })
             .populate('responsable', 'nom name email');
         if (!entretien) {
             return res.status(404).json({ message: "Entretien not found" });

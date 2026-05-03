@@ -7,7 +7,10 @@ const candidatSchema = new mongoose.Schema({
   motDePasse: { type: String, required: true },
   telephone: { type: String },
   cv_url: { type: String },
-  portfolio_url: { type: String }
+  portfolio_url: { type: String },
+  photo_url: { type: String },
+  resetToken: { type: String, default: null },
+  resetTokenExpiry: { type: Date, default: null }
 }, { timestamps: true });
 
 candidatSchema.pre('save', async function(next) {

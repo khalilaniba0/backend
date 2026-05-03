@@ -53,6 +53,27 @@ const supprimerAncienCvLocal = async (cvUrl) => {
   }
 };
 
+const supprimerAnciennePhotoLocal = async (photoUrl) => {
+  if (!photoUrl || typeof photoUrl !== 'string' || photoUrl.includes('://')) {
+    return;
+  }
+
+  const nomFichier = path.basename(photoUrl);
+  if (nomFichier !== photoUrl) {
+    return;
+  }
+
+  const cheminFichier = path.join(__dirname, '..', 'public', 'profile-photos', nomFichier);
+
+  try {
+    await fs.promises.unlink(cheminFichier);
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.error(`Impossible de supprimer l'ancienne photo ${nomFichier}:`, error.message);
+    }
+  }
+};
+
 module.exports.inscrire = async (req, res) => {
   try {
     const { nom, email, motDePasse, telephone } = req.body;
@@ -82,7 +103,8 @@ module.exports.inscrire = async (req, res) => {
         email: candidat.email,
         telephone: candidat.telephone,
         cv_url: candidat.cv_url,
-        portfolio_url: candidat.portfolio_url
+        portfolio_url: candidat.portfolio_url,
+        photo_url: candidat.photo_url
       }
     });
   } catch (error) {
@@ -122,7 +144,8 @@ module.exports.connecter = async (req, res) => {
         email: candidat.email,
         telephone: candidat.telephone,
         cv_url: candidat.cv_url,
-        portfolio_url: candidat.portfolio_url
+        portfolio_url: candidat.portfolio_url,
+        photo_url: candidat.photo_url
       }
     });
   } catch (error) {
@@ -154,7 +177,7 @@ module.exports.monProfil = async (req, res) => {
 
 module.exports.mettreAJourProfil = async (req, res) => {
   try {
-    const candidatActuel = await Candidat.findById(req.candidatId).select('cv_url');
+    const candidatActuel = await Candidat.findById(req.candidatId).select('cv_url photo_url');
     if (!candidatActuel) {
       return res.status(404).json({ message: 'Candidat introuvable.' });
     }
@@ -180,9 +203,14 @@ module.exports.mettreAJourProfil = async (req, res) => {
       }
     }
 
-    // If the request includes an uploaded file (multipart/form-data), persist it in cv_url.
-    if (req.file && req.file.filename) {
-      updateData.cv_url = req.file.filename;
+    // Handle file uploads from .fields() middleware
+    if (req.files) {
+      if (req.files.cv_url && req.files.cv_url[0]) {
+        updateData.cv_url = req.files.cv_url[0].filename;
+      }
+      if (req.files.photo && req.files.photo[0]) {
+        updateData.photo_url = req.files.photo[0].filename;
+      }
     }
 
     if (Object.keys(updateData).length === 0) {
@@ -196,11 +224,20 @@ module.exports.mettreAJourProfil = async (req, res) => {
     )
       .select('-motDePasse');
 
+    // Handle CV file deletion
     const ancienCv = candidatActuel.cv_url;
     const nouveauCv = updateData.cv_url;
 
     if (nouveauCv !== undefined && ancienCv && ancienCv !== nouveauCv) {
       await supprimerAncienCvLocal(ancienCv);
+    }
+
+    // Handle profile photo file deletion
+    const anciennePhoto = candidatActuel.photo_url;
+    const nouvellePhoto = updateData.photo_url;
+
+    if (nouvellePhoto !== undefined && anciennePhoto && anciennePhoto !== nouvellePhoto) {
+      await supprimerAnciennePhotoLocal(anciennePhoto);
     }
 
     return res.status(200).json({ message: 'Profil candidat mis a jour.', data: candidat });

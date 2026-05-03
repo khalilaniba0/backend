@@ -9,11 +9,9 @@ Perimetre: `backend/` (code source maintenable, pas `node_modules/`).
 
 ## Fichiers racine backend/
 
-- `backend/package.json` : dependances Node (Express, Mongoose, JWT, Google APIs, multer, cron) et scripts `start`/`dev`.
+- `backend/package.json` : dependances Node (Express, Mongoose, JWT, Google APIs, multer) et scripts `start`/`dev`.
 - `backend/package-lock.json` : verrouillage des versions npm.
-- `backend/app.js` : point d'entree serveur HTTP, montage middlewares globaux, montage routes, gestion erreurs, lancement DB + cron.
-- `backend/notificationCron.js` : tache planifiee d'envoi des notifications en attente.
-  Utilise par: `backend/app.js`.
+- `backend/app.js` : point d'entree serveur HTTP, montage middlewares globaux, montage routes, gestion erreurs, lancement DB.
 - `backend/architecture.md` : cartographie backend (ce fichier).
 
 ## Configuration
@@ -41,9 +39,6 @@ Perimetre: `backend/` (code source maintenable, pas `node_modules/`).
 - `backend/routes/candidat.route.js` : auth/profil candidat (`inscrire`, `connecter`, `monProfil`, `mettreAJourProfil`).
   Utilise par: `backend/app.js` sous `/candidat`.
   Depend de: `controllers/candidat.controller`, `middlewares/requireCandidat`, `uploadfile`.
-- `backend/routes/notification.route.js` : endpoints notifications (pending, create, mark sent/read, delete).
-  Utilise par: `backend/app.js` sous `/notification`.
-  Depend de: `controllers/notification.controller`, `middlewares/authMiddleware`, `requireTenant`.
 - `backend/routes/google.route.js` : OAuth Google Calendar (demarrage OAuth + callback).
   Routes:
     - `GET /auth/google` [protege par `requireAuth`] : lance la redirection vers Google.
@@ -62,15 +57,12 @@ Perimetre: `backend/` (code source maintenable, pas `node_modules/`).
 - `backend/controllers/offreEmploi.controller.js` : CRUD offres, filtres, statut open/closed, suppression cascade des candidatures liees.
   Utilise par: `backend/routes/offreEmploi.route.js`.
   Depend de: `models/offreEmploi.model`, `models/candidature.model`, `controllers/candidature.controller` (fonction `supprimerCandidaturesParOffre`).
-- `backend/controllers/candidature.controller.js` : postuler/annuler/modifier cote candidat, lecture cote RH, transitions d'etapes, creation entretien lie, notifications differees.
+- `backend/controllers/candidature.controller.js` : postuler/annuler/modifier cote candidat, lecture cote RH, transitions d'etapes, creation entretien lie.
   Utilise par: `backend/routes/candidature.route.js` et indirectement `offreEmploi.controller.js`.
-  Depend de: `models/candidature.model`, `offreEmploi.model`, `candidat.model`, `entretien.model`, `utilisateur.model`, `notification.model`, `utils/googleCalendar`, `utils/notificationMessage`.
+  Depend de: `models/candidature.model`, `offreEmploi.model`, `candidat.model`, `entretien.model`, `utilisateur.model`, `utils/googleCalendar`.
 - `backend/controllers/entretien.controller.js` : CRUD entretiens, detection conflits, synchronisation Google Calendar (create/update/delete event), rollback etape candidature si suppression entretien.
   Utilise par: `backend/routes/entretien.route.js`.
   Depend de: `models/entretien.model`, `candidature.model`, `utilisateur.model`, `utils/googleCalendar`.
-- `backend/controllers/notification.controller.js` : lecture/creation/marquage notifications avec controle tenant et generation message.
-  Utilise par: `backend/routes/notification.route.js`.
-  Depend de: `models/notification.model`, `models/candidature.model`, `utils/notificationMessage`.
 - `backend/controllers/candidat.controller.js` : inscription/connexion/deconnexion candidat, profil candidat, upload/maj CV.
   Utilise par: `backend/routes/candidat.route.js`.
   Depend de: `models/candidat.model`, `jsonwebtoken`, `fs`, `path`.
@@ -80,22 +72,20 @@ Perimetre: `backend/` (code source maintenable, pas `node_modules/`).
 - `backend/models/utilisateur.model.js` : schema user RH/admin, hash password, login with lock after failed attempts, aliases API (`name`, `password`, `block`, etc.).
   Utilise par: `controllers/utilisateur.controller`, `controllers/entreprise.controller`, `controllers/candidature.controller`, `controllers/entretien.controller`, `middlewares/authMiddleware`, `routes/google.route`.
 - `backend/models/entreprise.model.js` : schema entreprise (nom, email, logo, plan, isActive).
-  Utilise par: `controllers/entreprise.controller`, `models/utilisateur.model`, `models/offreEmploi.model`, `models/candidature.model`, `models/entretien.model`, `models/notification.model` (refs).
+  Utilise par: `controllers/entreprise.controller`, `models/utilisateur.model`, `models/offreEmploi.model`, `models/candidature.model`, `models/entretien.model`.
 - `backend/models/offreEmploi.model.js` : schema offre, aliases (`post`, `status`, `requirements`), contrat/mode/niveau.
   Utilise par: `controllers/offreEmploi.controller`, `controllers/entreprise.controller`, `controllers/candidature.controller`.
 - `backend/models/candidature.model.js` : schema candidature + etapes pipeline + aliases (`lettre_motivation`, `score_ia`, `date_entretien`, `type_entretien`).
-  Utilise par: `controllers/candidature.controller`, `controllers/offreEmploi.controller`, `controllers/entreprise.controller`, `controllers/notification.controller`, `controllers/entretien.controller`.
+  Utilise par: `controllers/candidature.controller`, `controllers/offreEmploi.controller`, `controllers/entreprise.controller`, `controllers/entretien.controller`.
 - `backend/models/entretien.model.js` : schema entretien, details evaluation, aliases snake_case/camelCase, lien Google event.
   Utilise par: `controllers/entretien.controller`, `controllers/candidature.controller`, `controllers/entreprise.controller`.
-- `backend/models/notification.model.js` : schema notification (type, statut en_attente/envoyee/lue, date d'envoi differee).
-  Utilise par: `controllers/notification.controller`, `controllers/candidature.controller`, `notificationCron.js`.
 - `backend/models/candidat.model.js` : schema candidat, hash password, verification mot de passe.
   Utilise par: `controllers/candidat.controller`, `controllers/candidature.controller`.
 
 ## Middlewares
 
 - `backend/middlewares/authMiddleware.js` : auth JWT RH/admin via cookie `jwt`, hydrate `req.utilisateur`, `req.entrepriseId`, `req.user` (compat).
-  Utilise par: routes `utilisateur`, `offreEmploi`, `candidature` (RH), `entretien`, `entreprise`, `notification`, `google`.
+  Utilise par: routes `utilisateur`, `offreEmploi`, `candidature` (RH), `entretien`, `entreprise`, `google`.
 - `backend/middlewares/requireAdmin.js` : bloque acces si role != `admin`.
   Utilise par: `routes/utilisateur.route.js`, `routes/entreprise.route.js`.
 - `backend/middlewares/requireTenant.js` : exige `entrepriseId` (depuis token ou user courant).
@@ -113,8 +103,6 @@ Perimetre: `backend/` (code source maintenable, pas `node_modules/`).
 
 - `backend/utils/googleCalendar.js` : OAuth URL + create/update/delete Google Calendar events (avec conference Meet pour visio).
   Utilise par: `controllers/candidature.controller`, `controllers/entretien.controller`, `routes/google.route.js`.
-- `backend/utils/notificationMessage.js` : generation centralisee de messages de notification + mapping type par etape.
-  Utilise par: `controllers/candidature.controller`, `controllers/notification.controller`.
 - `backend/utils/iaScoringClient.js` : client HTTP vers le service IA (`/api/process-job`, `/api/match-cv`) pour reformulation d'offre et scoring CV.
   Contrat d'integration detaille: `backend/docs/integration-ia.md`.
 
@@ -137,11 +125,8 @@ Perimetre: `backend/` (code source maintenable, pas `node_modules/`).
   `routes/candidature.route.js` (`requireCandidat`, `uploadfile`) -> `controllers/candidature.controller.postuler` -> `models/candidature.model`.
 - Flux transition vers entretien:
   `controllers/candidature.controller.updateCandidatureEtape` -> creation/maj `models/entretien.model` -> sync Google via `utils/googleCalendar`.
-- Flux notifications differees:
-  `controllers/candidature.controller` / `controllers/notification.controller` -> `models/notification.model` (statut `en_attente`) -> `notificationCron.runNotificationDispatch`.
 
 ## Exemple demande (trace explicite)
 
 - `backend/routes/candidature.route.js` consomme les fonctions de `backend/controllers/candidature.controller.js`.
-- Dans ce controller, `buildNotificationMessage` et `resolveNotificationTypeByEtape` sont importees depuis `backend/utils/notificationMessage.js` pour construire les messages metier selon l'etape.
-- Le meme controller utilise `createCalendarEvent` depuis `backend/utils/googleCalendar.js` pour synchroniser les entretiens avec Google Calendar.
+- Ce controller utilise `createCalendarEvent` depuis `backend/utils/googleCalendar.js` pour synchroniser les entretiens avec Google Calendar.

@@ -2,6 +2,9 @@ require('dotenv').config();
 const utilisateurModel = require('../models/utilisateur.model');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
+const { transporter, resolveFromAddress } = require('../config/mailer');
+const { invitationEmailHtml } = require('../utils/emailTemplates');
 
 const maxage = 3 * 24 * 60 * 60; // 3 days in seconds
 const isProduction = process.env.NODE_ENV === 'production';
@@ -362,7 +365,8 @@ module.exports.createAdmin = async (req, res) => {
             email,
             motDePasse: motDePasse !== undefined ? motDePasse : password,
             role: 'admin',
-            entreprise: req.entrepriseId
+            entreprise: req.entrepriseId,
+            firstLogin: true
         });
         await nouvelUtilisateur.save();
         res.status(201).json({ message: 'Admin created successfully', data: normaliserUtilisateurSortie(nouvelUtilisateur) });
@@ -380,8 +384,33 @@ module.exports.login = async (req, res) => {
             derniereConnexion: new Date(),
             isActive: true
         });
-        if (!utilisateur.entreprise) {
+
+        // Superadmin has no entreprise — allow login.
+        if (utilisateur.role !== 'superadmin' && !utilisateur.entreprise) {
             return res.status(403).json({ message: "User has no entreprise assigned" });
+        }
+
+        // For non-superadmin users, check enterprise statut.
+        if (utilisateur.role !== 'superadmin' && utilisateur.entreprise) {
+            const Entreprise = require('../models/entreprise.model');
+            const entreprise = await Entreprise.findById(utilisateur.entreprise);
+            if (entreprise) {
+                if (entreprise.statut === 'en_attente') {
+                    return res.status(403).json({
+                        message: "Votre compte est en attente de validation par l'administrateur de la plateforme."
+                    });
+                }
+                if (entreprise.statut === 'rejetee') {
+                    return res.status(403).json({
+                        message: `Votre demande d'inscription a été refusée. Motif : ${entreprise.motifRejet || 'Non précisé'}`
+                    });
+                }
+                if (entreprise.statut === 'suspendue') {
+                    return res.status(403).json({
+                        message: "Votre compte entreprise a été suspendu. Contactez le support."
+                    });
+                }
+            }
         }
 
         const token = createToken(utilisateur);
@@ -404,4 +433,128 @@ module.exports.logout = async (req, res) => {
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
+};
+
+// -- NOUVEAUX FLUX RH & SETUP --
+
+module.exports.inviteRh = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const entrepriseId = req.entrepriseId;
+
+    const existingUser = await utilisateurModel.findOne({ email, entreprise: entrepriseId });
+    if (existingUser && !existingUser.isInvited) {
+      return res.status(409).json({ message: "Cet utilisateur existe déjà et est actif dans l'entreprise." });
+    }
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const invitationToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const invitationTokenExpires = Date.now() + 72 * 3600000; // 72h
+
+    if (existingUser && existingUser.isInvited) {
+      existingUser.invitationToken = invitationToken;
+      existingUser.invitationTokenExpires = invitationTokenExpires;
+      await existingUser.save();
+    } else {
+      const newUser = new utilisateurModel({
+        email,
+        role: 'rh',
+        entreprise: entrepriseId,
+        isInvited: true,
+        nom: '', 
+        motDePasse: crypto.randomBytes(16).toString('hex'), 
+        invitationToken,
+        invitationTokenExpires,
+      });
+      await newUser.save();
+    }
+
+    const lien = `${process.env.FRONTEND_URL}/invitation/${rawToken}`;
+
+    await transporter.sendMail({
+            from: resolveFromAddress('Talentia ATS'),
+      to: email,
+      subject: "Vous avez été invité à rejoindre Talentia",
+      html: invitationEmailHtml({ nom_entreprise: "l'entreprise", lien, expires_hours: 72 }),
+    });
+
+    res.status(201).json({ message: 'Invitation envoyée', email });
+  } catch (error) {
+    res.status(500).json({ message: "Erreur lors de l'invitation", detail: error.message });
+  }
+};
+
+module.exports.checkInvitation = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await utilisateurModel.findOne({
+      invitationToken: hashedToken,
+      invitationTokenExpires: { $gt: Date.now() },
+      isInvited: true
+    });
+
+    if (!user) return res.status(404).json({ message: 'Lien invalide ou expiré' });
+    res.status(200).json({ email: user.email, valid: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur lors de la vérification' });
+  }
+};
+
+module.exports.acceptInvitation = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { nom, motDePasse, tel } = req.body;
+    
+    if (!nom || !motDePasse || motDePasse.length < 8) {
+        return res.status(400).json({ message: 'Données invalides' });
+    }
+
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const user = await utilisateurModel.findOne({
+      invitationToken: hashedToken,
+      invitationTokenExpires: { $gt: Date.now() },
+      isInvited: true
+    });
+
+    if (!user) return res.status(404).json({ message: 'Lien invalide ou expiré' });
+
+    user.nom = nom;
+    user.motDePasse = motDePasse;
+    if (tel) user.tel = tel;
+    user.isInvited = false;
+    user.invitationToken = null;
+    user.invitationTokenExpires = null;
+    user.firstLogin = false;
+
+    await user.save(); // pre-save hook va hacher le mdp
+    res.status(200).json({ message: 'Compte activé avec succès' });
+  } catch (error) {
+    res.status(500).json({ message: "Erreur lors de l'activation", detail: error.message });
+  }
+};
+
+module.exports.completeSetup = async (req, res) => {
+  try {
+    const { nom, motDePasse, tel } = req.body;
+    const utilisateurId = req.utilisateurId || req.user?._id; 
+    
+    const user = await utilisateurModel.findById(utilisateurId);
+    if (!user) return res.status(404).json({ message: 'Utilisateur introuvable' });
+    
+    if (user.firstLogin !== true) {
+        return res.status(403).json({ message: 'Setup déjà configuré' });
+    }
+
+    user.nom = nom || user.nom;
+    if (motDePasse) user.motDePasse = motDePasse;
+    if (tel) user.tel = tel;
+    user.firstLogin = false;
+
+    await user.save();
+    res.status(200).json({ message: 'Profil configuré', data: normaliserUtilisateurSortie(user) });
+  } catch (error) {
+    res.status(500).json({ message: "Erreur de configuration", detail: error.message });
+  }
 };

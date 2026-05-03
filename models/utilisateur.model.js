@@ -12,7 +12,7 @@ const utilisateurSchema = new mongoose.Schema(
       match: /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/
     },
     motDePasse: { type: String, alias: 'password' },
-    role: { type: String, enum: ['rh', 'admin'], default: 'rh' },
+    role: { type: String, enum: ['rh', 'admin', 'superadmin'], default: 'rh' },
     tel: { type: String, alias: 'telephone' },
     photo: String,
     adresse: { type: String, alias: 'address' },
@@ -25,17 +25,29 @@ const utilisateurSchema = new mongoose.Schema(
       refresh_token: String,
       expiry_date: Number
     },
-    entreprise: { type: mongoose.Schema.Types.ObjectId, ref: 'Entreprise', required: true },
+    entreprise: { type: mongoose.Schema.Types.ObjectId, ref: 'Entreprise', default: null },
     bloque: { type: Boolean, default: false, alias: 'block' },
     tentativesConnexion: { type: Number, default: 0, alias: 'loginAttempts' },
     derniereConnexion: {
       type: Date,
       default: null
     },
+    resetToken: {
+      type: String,
+      default: null
+    },
+    resetTokenExpiry: {
+      type: Date,
+      default: null
+    },
     isActive: {
       type: Boolean,
       default: true
-    }
+    },
+    invitationToken: { type: String, default: null },
+    invitationTokenExpires: { type: Date, default: null },
+    isInvited: { type: Boolean, default: false },
+    firstLogin: { type: Boolean, default: false }
   },
   { timestamps: true }
 );

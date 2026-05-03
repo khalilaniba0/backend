@@ -36,6 +36,7 @@ module.exports.registerEntreprise = async (req, res) => {
       });
     }
 
+    // Enterprise starts in "en_attente" — superadmin must approve it.
     const entreprise = await entrepriseModel.create({
       nom,
       email,
@@ -43,10 +44,13 @@ module.exports.registerEntreprise = async (req, res) => {
       secteur,
       logo,
       siteWeb,
-      plan
+      plan,
+      statut: 'en_attente',
+      dateInscription: new Date()
     });
 
     try {
+      // Admin user is blocked until the enterprise is validated.
       const adminUser = await utilisateurModel.create({
         nom: resolvedAdminName,
         email: resolvedAdminEmail,
@@ -55,7 +59,8 @@ module.exports.registerEntreprise = async (req, res) => {
         tel: resolvedAdminTel,
         photo: resolvedAdminPhoto,
         adresse: resolvedAdminAdresse,
-        entreprise: entreprise._id
+        entreprise: entreprise._id,
+        bloque: true
       });
 
       const adminObject = adminUser.toObject({ virtuals: true });
@@ -63,7 +68,7 @@ module.exports.registerEntreprise = async (req, res) => {
       delete adminObject.password;
 
       return res.status(201).json({
-        message: 'Entreprise registered successfully',
+        message: "Votre demande d'inscription a bien été reçue. Elle est en attente de validation par notre équipe.",
         data: {
           entreprise,
           admin: adminObject
@@ -92,7 +97,7 @@ module.exports.getMyEntreprise = async (req, res) => {
 
 module.exports.updateEntreprise = async (req, res) => {
   try {
-    const { nom, email, adresse, secteur, logo, siteWeb, plan, isActive } = req.body;
+    const { nom, email, adresse, secteur, logo, siteWeb, plan, apropos } = req.body;
     const updateData = {};
     if (nom !== undefined) updateData.nom = nom;
     if (email !== undefined) updateData.email = email;
@@ -102,7 +107,7 @@ module.exports.updateEntreprise = async (req, res) => {
     if (req.file) updateData.logo = `/logo/${req.file.filename}`;
     if (siteWeb !== undefined) updateData.siteWeb = siteWeb;
     if (plan !== undefined) updateData.plan = plan;
-    if (isActive !== undefined) updateData.isActive = isActive;
+    if (apropos !== undefined) updateData.apropos = apropos;
 
     const updatedEntreprise = await entrepriseModel.findByIdAndUpdate(req.entrepriseId, updateData, { new: true });
     if (!updatedEntreprise) {
@@ -133,5 +138,18 @@ module.exports.deleteEntreprise = async (req, res) => {
     return res.status(200).json({ message: 'Entreprise deleted successfully', data: deletedEntreprise });
   } catch (error) {
     return res.status(500).json({ message: 'Error deleting entreprise', detail: error.message });
+  }
+};
+
+module.exports.getPublicEntreprise = async (req, res) => {
+  try {
+    const entreprise = await entrepriseModel.findById(req.params.id)
+      .select('nom logo siteWeb email adresse apropos');
+    if (!entreprise) {
+      return res.status(404).json({ message: 'Entreprise not found' });
+    }
+    return res.status(200).json({ message: 'Entreprise retrieved successfully', data: entreprise });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error retrieving entreprise', detail: error.message });
   }
 };

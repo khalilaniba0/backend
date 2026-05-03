@@ -3,9 +3,7 @@ const offreEmploiModel = require('../models/offreEmploi.model');
 const candidatModel = require('../models/candidat.model');
 const entretienModel = require('../models/entretien.model');
 const utilisateurModel = require('../models/utilisateur.model');
-const notificationModel = require('../models/notification.model');
 const { createCalendarEvent } = require('../utils/googleCalendar');
-const { buildNotificationMessage, resolveNotificationTypeByEtape } = require('../utils/notificationMessage');
 const crypto = require('crypto');
 const path = require('path');
 const { scorerCV } = require('../utils/iaScoringClient');
@@ -44,48 +42,6 @@ const buildCvAbsolutePath = (reqFile, cvUrl) => {
     return path.join(__dirname, '..', 'public', 'cv', fileName);
 };
 
-const getObjectId = (value) => {
-    if (!value) return null;
-    if (value._id) return value._id;
-    return value;
-};
-
-const getPoste = (candidature) => {
-    if (!candidature || !candidature.offre) return null;
-    return candidature.offre.poste || candidature.offre.post || null;
-};
-
-const createDelayedNotification = async ({
-    candidature,
-    etapeSource,
-    etapeCible,
-    forcedType,
-    dateEntretien,
-    typeEntretien
-}) => {
-    const type = forcedType || resolveNotificationTypeByEtape(etapeCible);
-    const poste = getPoste(candidature);
-
-    await notificationModel.create({
-        candidat: getObjectId(candidature.candidat),
-        candidature: getObjectId(candidature),
-        type,
-        message: buildNotificationMessage({
-            type,
-            poste,
-            etapeCible,
-            dateEntretien,
-            typeEntretien
-        }),
-        etapeSource,
-        etapeCible,
-        dateEntretien: dateEntretien ? new Date(dateEntretien) : undefined,
-        typeEntretien,
-        datePrevueEnvoi: new Date(Date.now() + 10 * 60 * 1000),
-        entreprise: getObjectId(candidature.entreprise)
-    });
-};
-
 module.exports.supprimerCandidaturesParOffre = async (offreId, entrepriseId) => {
     if (!offreId) {
         throw new Error('offreId is required for cascade delete');
@@ -98,29 +54,24 @@ module.exports.supprimerCandidaturesParOffre = async (offreId, entrepriseId) => 
 
     const candidatures = await candidatureModel.find(baseFilter).select('_id');
     if (!candidatures.length) {
-        return { candidatures: 0, entretiens: 0, notifications: 0 };
+        return { candidatures: 0, entretiens: 0 };
     }
 
     const candidatureIds = candidatures.map((candidature) => candidature._id);
 
     const entretienFilter = { candidature: { $in: candidatureIds } };
-    const notificationFilter = { candidature: { $in: candidatureIds } };
-
     if (entrepriseId) {
         entretienFilter.entreprise = entrepriseId;
-        notificationFilter.entreprise = entrepriseId;
     }
 
-    const [entretienResult, notificationResult, candidatureResult] = await Promise.all([
+    const [entretienResult, candidatureResult] = await Promise.all([
         entretienModel.deleteMany(entretienFilter),
-        notificationModel.deleteMany(notificationFilter),
         candidatureModel.deleteMany(baseFilter)
     ]);
 
     return {
         candidatures: candidatureResult.deletedCount || 0,
-        entretiens: entretienResult.deletedCount || 0,
-        notifications: notificationResult.deletedCount || 0
+        entretiens: entretienResult.deletedCount || 0
     };
 };
 
@@ -383,6 +334,7 @@ module.exports.getAllCandidatures = async (req, res) => {
         const candidatures = await candidatureModel
             .find(filter)
             .populate('offre')
+            .populate('candidat', 'nom email telephone cv_url photo_url')
             .sort({ scoreIA: -1 });
 
         const planifiees = candidatures.filter(function (c) {
@@ -481,6 +433,7 @@ module.exports.getCandidaturesByOffre = async (req, res) => {
         const candidatures = await candidatureModel
             .find({ offre: offreId, entreprise: req.entrepriseId })
             .populate('offre')
+            .populate('candidat', 'nom email telephone cv_url photo_url')
             .sort({ scoreIA: -1 });
 
         return res.status(200).json({
@@ -649,16 +602,6 @@ module.exports.updateCandidatureEtape = async (req, res) => {
             }
         }
 
-        if (etape) {
-            await createDelayedNotification({
-                candidature,
-                etapeSource,
-                etapeCible: etape,
-                dateEntretien: etape === 'entretien_planifie' ? parsedDateEntretien : undefined,
-                typeEntretien: etape === 'entretien_planifie' ? normalizedTypeEntretien : undefined
-            });
-        }
-
         const responsePayload = {
             message: 'Candidature updated successfully',
             data: normaliserCandidatureSortie(candidature)
@@ -691,16 +634,8 @@ module.exports.refuserCandidature = async (req, res) => {
             return res.status(404).json({ message: 'Candidature not found' });
         }
 
-        const etapeSource = candidature.etape;
         candidature.etape = 'refuse';
         await candidature.save();
-
-        await createDelayedNotification({
-            candidature,
-            etapeSource,
-            etapeCible: 'refuse',
-            forcedType: 'refus'
-        });
 
         return res.status(200).json({
             message: 'Candidature refusee avec succes',
@@ -725,13 +660,6 @@ module.exports.deleteCandidatureById = async (req, res) => {
         if (!candidature) {
             return res.status(404).json({ message: 'Candidature not found' });
         }
-
-        await createDelayedNotification({
-            candidature,
-            etapeSource: candidature.etape,
-            etapeCible: 'suppression',
-            forcedType: 'suppression'
-        });
 
         await candidatureModel.deleteOne({ _id: candidature._id, entreprise: req.entrepriseId });
 

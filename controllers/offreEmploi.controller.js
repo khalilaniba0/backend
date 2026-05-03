@@ -5,7 +5,7 @@ const { processOffer } = require('../utils/iaScoringClient');
 
 const POPULATE_OFFRE_REFS = [
     { path: 'responsable', select: 'nom name email' },
-    { path: 'entreprise', select: 'nom logo secteur siteWeb' }
+    { path: 'entreprise', select: 'nom logo secteur siteWeb email adresse apropos' }
 ];
 
 const construireFiltreOffres = (query = {}, entrepriseId = null) => {

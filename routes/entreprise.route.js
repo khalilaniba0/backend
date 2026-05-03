@@ -10,5 +10,7 @@ router.post('/registerEntreprise', entrepriseController.registerEntreprise);
 router.get('/getMyEntreprise', requireAuth, requireAdmin, requireTenant, entrepriseController.getMyEntreprise);
 router.put('/updateEntreprise', requireAuth, requireAdmin, requireTenant, uploadLogo.single('logo'), entrepriseController.updateEntreprise);
 router.delete('/deleteEntreprise', requireAuth, requireAdmin, requireTenant, entrepriseController.deleteEntreprise);
+router.get('/:id/public', entrepriseController.getPublicEntreprise);
 
 module.exports = router;
+

@@ -5,6 +5,8 @@ var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 var cors = require('cors');
 const axios = require('axios');
+const fs = require('fs');
+require('dotenv').config();
 
 const http = require('http');
 const { connectToMongoDB } = require('./config/db');
@@ -14,18 +16,22 @@ const candidatureRouter = require('./routes/candidature.route');
 const entretienRouter = require('./routes/entretien.route');
 const entrepriseRouter = require('./routes/entreprise.route');
 const candidatRouter = require('./routes/candidat.route');
-const notificationRouter = require('./routes/notification.route');
+const candidatPasswordResetRouter = require('./routes/candidatPasswordReset.route');
 const googleRouter = require('./routes/google.route');
-const { startNotificationCron } = require('./notificationCron');
-
-require('dotenv').config();
+const superadminRouter = require('./routes/superadmin.route');
 var app = express();
 
-const IA_BASE_URL = process.env.IA_SERVICE_URL || process.env.IA_BASE_URL || 'http://127.0.0.1:8000';
+const PORT = Number(process.env.PORT || 5000);
+const IA_BASE_URL = process.env.IA_BASE_URL || 'http://cv-scoring-service:8000';
 const IA_HEALTH_TIMEOUT_MS = Number(process.env.IA_HEALTH_TIMEOUT_MS || 5000);
-const PORT = process.env.PORT || 5000;
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://10.0.0.5:3000';
 
 const checkIaHealth = async () => {
+  if (!IA_BASE_URL) {
+    console.warn('[IA] health check skipped: IA_BASE_URL is not defined');
+    return;
+  }
+
   try {
     const response = await axios.get(`${IA_BASE_URL}/health`, {
       timeout: IA_HEALTH_TIMEOUT_MS
@@ -41,11 +47,10 @@ const checkIaHealth = async () => {
   }
 };
 
+// Allow frontend access from configured origin (Docker/Linux deployment).
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: CORS_ORIGIN,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization']
 };
 app.use(cors(corsOptions));
 
@@ -55,13 +60,24 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Ensure profile photos directory exists
+const profilePhotosPath = path.join(__dirname, 'public', 'profile-photos');
+if (!fs.existsSync(profilePhotosPath)) {
+  fs.mkdirSync(profilePhotosPath, { recursive: true });
+}
+
+app.get('/health', function(req, res) {
+  res.status(200).json({ status: 'ok' });
+});
+
 app.use('/user', utilisateurRouter);
 app.use('/offre', offreEmploiRouter);
 app.use('/candidature', candidatureRouter);
 app.use('/entretien', entretienRouter);
 app.use('/entreprise', entrepriseRouter);
+app.use('/candidat', candidatPasswordResetRouter);
 app.use('/candidat', candidatRouter);
-app.use('/notification', notificationRouter);
+app.use('/superadmin', superadminRouter);
 app.use('/', googleRouter);
 
 // catch 404 and forward to error handler
@@ -79,16 +95,10 @@ app.use(function(err, req, res, next) {
 });
 
 const server = http.createServer(app);
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   connectToMongoDB();
   if (process.env.NODE_ENV !== 'test') {
-    startNotificationCron();
     checkIaHealth();
   }
-
-  if (process.env.NODE_ENV === 'production') {
-    console.warn('⚠️  Fichiers uploadés sur filesystem éphémère. Migrer vers Cloudinary en production réelle.');
-  }
-
   console.log(`Server is running on port ${PORT}`);
 });
