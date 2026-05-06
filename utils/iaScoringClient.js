@@ -7,7 +7,12 @@ const IA_BASE_URL = process.env.IA_SERVICE_URL || process.env.IA_BASE_URL || 'ht
 const IA_TIMEOUT_MS = Number(process.env.IA_TIMEOUT_MS || 10000);
 const IA_SCORE_TIMEOUT_MS = Number(process.env.IA_SCORE_TIMEOUT_MS || 10000);
 
-const isNonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0;
+const isNonEmptyString = (value) => {
+    if (typeof value !== 'string' || value.trim().length === 0) return false;
+    const normalized = value.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    if (normalized === "non specifie" || normalized === "non precise") return false;
+    return true;
+};
 
 const normalizeListField = (value) => {
     if (Array.isArray(value)) {
@@ -19,8 +24,14 @@ const normalizeListField = (value) => {
     if (value === null || value === undefined) {
         return '';
     }
+    
+    // Normalize "Non spécifié" to an empty string so the IA knows it's absent
+    const strValue = String(value);
+    if (/^non\s+(sp[ée]cifi[ée]|pr[ée]cis[ée])$/i.test(strValue.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))) {
+        return '';
+    }
 
-    return String(value);
+    return strValue;
 };
 
 const pickIaErrorMessage = (payload, fallback) => {
