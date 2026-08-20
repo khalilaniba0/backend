@@ -3,9 +3,10 @@ const router = express.Router();
 const superadminController = require('../controllers/superadmin.controller');
 const requireAuth = require('../middlewares/authMiddleware');
 const requireSuperAdmin = require('../middlewares/requireSuperAdmin');
+const logMiddleware = require('../middlewares/logMiddlewares');
 
 // All routes require authentication + superadmin role.
-router.use(requireAuth, requireSuperAdmin);
+router.use(requireAuth, requireSuperAdmin, logMiddleware);
 
 // Statistics
 router.get('/stats', superadminController.getStats);

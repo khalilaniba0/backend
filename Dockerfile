@@ -1,8 +1,14 @@
-FROM node:16-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-RUN mkdir -p public/cv public/logo
+FROM node:18-bookworm-slim
 
-CMD ["node", "app.js"]
+WORKDIR /usr/src/app
+
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY . .
+
+RUN mkdir -p public/cv public/logo public/profile-photos logs
+
+EXPOSE 5000
+
+CMD ["sh", "-c", "node scripts/wait-for-mongo.js && node app.js"]
